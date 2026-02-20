@@ -47,7 +47,8 @@ NewGELU::Forward(const std::vector<std::shared_ptr<infini_train::Tensor>> &x) {
 }
 
 CausalSelfAttention::CausalSelfAttention(const GPT2Config &config)
-    : CloneableModule(kType), config_(config), n_head_(config.n_head), n_embd_(config.n_embd) {
+    : CloneableModule(kType), config_(config), n_head_(config.n_head), n_embd_(config.n_embd),
+      enable_flash_attention_(config.enable_flash_attention) {
     auto tp_world_size = nn::parallel::global::GetTensorParallelSize();
     CHECK_EQ(config.n_embd % config.n_head, 0);
     CHECK_EQ(n_head_ % tp_world_size, 0) << "n_head must be divisible by TP world size";
@@ -100,23 +101,58 @@ CausalSelfAttention::Forward(const std::vector<std::shared_ptr<infini_train::Ten
     const auto T = q->Dims()[1];
 
     // View to multi-head: local_n_head * head_dim == local_C
-    // (B, T, local_C) -> (B, T, h_l, Dh) -> (B, h_l, T, Dh)
-    k = k->View({B, T, local_n_head_, head_dim})->Transpose(1, 2);
-    q = q->View({B, T, local_n_head_, head_dim})->Transpose(1, 2);
-    v = v->View({B, T, local_n_head_, head_dim})->Transpose(1, 2);
+    // (B, T, local_C) -> (B, T, h_l, Dh)
+    k = k->View({B, T, local_n_head_, head_dim});
+    q = q->View({B, T, local_n_head_, head_dim});
+    v = v->View({B, T, local_n_head_, head_dim});
 
-    // (B, h_l, T, T)
-    auto att = q->Matmul(k->Transpose(-2, -1)) * (1.0 / std::sqrt(head_dim));
-    // (1, 1, T, T)
-    auto mask = buffers_[kParamBiasName]->Slice({0, 0, 0, 0}, {1, 1, T, T}, {1, 1, 1, 1});
-    // (1, 1, T, T) -> eq 0 -> (1, 1, T, T) -> masked_fill -> (B, h_l, T, T)
-    att = att->MaskedFill(mask == 0, -std::numeric_limits<float>::infinity());
-    // (B, h_l, T, T)
-    att = nn::function::Softmax(att, -1);
-    // (B, h_l, T, Dh)
-    auto y = att->Matmul(v);
-    // (B, h_l, T, Dh) -> (B, T, h_l, Dh) -> (B, T, local_C)
-    y = y->Transpose(1, 2)->Contiguous()->View({B, T, local_C});
+    std::shared_ptr<infini_train::Tensor> y;
+
+    if (enable_flash_attention_) {
+        // Use FlashAttention if enabled and supported
+        // ===== FlashAttention 路径：要求 (B, T, h_l, Dh) =====
+        // 注意：FlashAttention 的实现可能会对输入的内存布局有要求，如果遇到性能问题，可以尝试调用 Contiguous()
+        // 来确保内存连续
+        k = k->Contiguous();
+        q = q->Contiguous();
+        v = v->Contiguous();
+
+        const double scale = 1.0 / std::sqrt(static_cast<double>(head_dim));
+        // TODO: flash attention not wired yet
+        // y = nn::function::ScaledDotProductAttention(q, k, v,
+        //                                             /*attn_mask=*/nullptr,
+        //                                             /*dropout_p=*/0.0,
+        //                                             /*is_causal=*/true,
+        //                                             /*scale=*/scale,
+        //                                             /*enable_gqa=*/false); // (B, T, h_l, Dh)
+        // y = y->View({B, T, local_C});
+    } else {
+        // -----------------------------
+        // 原始拼接版本（示意）
+        // scores = (q @ k^T) * scale
+        // scores += mask (causal / attn_mask)
+        // p = softmax(scores)
+        // y = p @ v
+        // -----------------------------
+
+        // (B, T, h_l, Dh) -> (B, h_l, T, Dh)
+        auto k_bhtd = k->Transpose(1, 2);
+        auto q_bhtd = q->Transpose(1, 2);
+        auto v_bhtd = v->Transpose(1, 2);
+        
+        // (B, h_l, T, Dh) * (B, h_l, Dh, T) -> (B, h_l, T, T)
+        auto att = q_bhtd->Matmul(k_bhtd->Transpose(-2, -1)) * (1.0 / std::sqrt(head_dim));
+        // (1, 1, T, T)
+        auto mask = buffers_[kParamBiasName]->Slice({0, 0, 0, 0}, {1, 1, T, T}, {1, 1, 1, 1});
+        // (1, 1, T, T) -> eq 0 -> (1, 1, T, T) -> masked_fill -> (B, h_l, T, T)
+        att = att->MaskedFill(mask == 0, -std::numeric_limits<float>::infinity());
+        // (B, h_l, T, T)
+        att = nn::function::Softmax(att, -1);
+        // (B, h_l, T, Dh)
+        y = att->Matmul(v_bhtd);
+        // (B, h_l, T, Dh) -> (B, T, h_l, Dh) -> (B, T, local_C)
+        y = y->Transpose(1, 2)->Contiguous()->View({B, T, local_C});
+    }
 
     // Get full tensor
     // (B, T, local_C) -> RowParallelLinear(n_embd, n_embd) -> (B, T, C)

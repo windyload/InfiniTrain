@@ -140,7 +140,8 @@ std::vector<std::shared_ptr<Tensor>> RMSNorm::Forward(const std::vector<std::sha
 
 CausalSelfAttention::CausalSelfAttention(const LLaMA3Config &config)
     : CloneableModule(kType), config_(config), n_head_(config.n_head), n_embd_(config.n_embd),
-      n_kv_head_(config.n_kv_head), n_rep_(config.n_head / config.n_kv_head), head_dim_(config.n_embd / config.n_head) {
+      n_kv_head_(config.n_kv_head), n_rep_(config.n_head / config.n_kv_head), head_dim_(config.n_embd / config.n_head),
+      enable_flash_attention_(config.enable_flash_attention) {
     CHECK_LE(config.n_kv_head, config.n_head);
     CHECK_EQ(config.n_head % config.n_kv_head, 0);
     CHECK_EQ(config.n_embd % config.n_head, 0);
@@ -207,36 +208,71 @@ std::vector<std::shared_ptr<Tensor>> CausalSelfAttention::Forward(const std::vec
     // TODO(zbl): use kv cache during inference
     // if (use_kv_) { ... }
 
-    // align n_head in GQA
+    // align n_head in GQA  这样后面就可以当作普通 MHA 来算（但代价是额外的复制/带宽）
     // (B, T, KV_local, D) -> (B, T, H_local, D) via RepeatKV
     k = RepeatKV(k, n_rep_);
     v = RepeatKV(v, n_rep_);
 
-    // (B, T, H_local, D) -> (B, H_local, T, D)
-    q = q->Transpose(1, 2);
-    k = k->Transpose(1, 2);
-    v = v->Transpose(1, 2);
-
     // TODO(zbl): support flash attention later
-    // if (flash_) { ... }
+    std::shared_ptr<Tensor> y;
+    if (enable_flash_attention_) {
+        LOG(INFO) << "flash attention path";
+        // ===== FlashAttention 路径：要求 (B, T, h_l, Dh) =====
+        // 当前已经是 (B, T, H_local, D) 的形状了
+        // 注意：FlashAttention 的实现可能会对输入的内存布局有要求，如果遇到性能问题，可以尝试调用 Contiguous()
+        // 来确保内存连续
+        k = k->Contiguous();
+        q = q->Contiguous();
+        v = v->Contiguous();
 
-    // manual implementation of attention
-    // this materializes the large (T,T) matrix for all the queries and keys
+        const double scale = 1.0 / std::sqrt(static_cast<double>(D));
 
-    // q: (B, H_local, T, D)
-    // k: (B, H_local, T, D) -> (B, H_local, D, T)
-    // q @ k.T: (B, H_local, T, T) -> mul 1.0 / sqrt(D) -> (B, H_local, T, T)
-    auto att = q->Matmul(k->Transpose(-2, -1)) * (1.0 / std::sqrt(static_cast<float>(D)));
-    if (mask) {
-        // mask: (1, 1, T, T)
-        att = att->MaskedFill(mask, std::numeric_limits<float>::lowest());
+        // (B, T, H_local, D)
+        // y = nn::function::ScaledDotProductAttention(q, k, v,
+        //                                             /*attn_mask=*/nullptr,
+        //                                             /*dropout_p=*/0.0,
+        //                                             /*is_causal=*/true,
+        //                                             /*scale=*/scale,
+        //                                             /*enable_gqa=*/false);
+        
+        // // (B, T, H_local, D) -> (B, T, C_local)
+        // y = y->View({B, T, C_local});
+    } else {
+        LOG(INFO) << "naive attention path";
+        // -----------------------------
+        // 原始拼接版本（示意）
+        // scores = (q @ k^T) * scale
+        // scores += mask (causal / attn_mask)
+        // p = softmax(scores)
+        // y = p @ v
+        // -----------------------------
+        
+        // (B, T, H_local, D) -> (B, H_local, T, D)
+        q = q->Transpose(1, 2);
+        k = k->Transpose(1, 2);
+        v = v->Transpose(1, 2);
+
+        // manual implementation of attention
+        // this materializes the large (T,T) matrix for all the queries and keys
+        // q: (B, H_local, T, D)
+        // k: (B, H_local, T, D) -> (B, H_local, D, T)
+        // q @ k.T: (B, H_local, T, T) -> mul 1.0 / sqrt(D) -> (B, H_local, T, T)
+        auto att = q->Matmul(k->Transpose(-2, -1)) * (1.0 / std::sqrt(static_cast<float>(D)));
+
+        if (mask) {
+            // mask: (1, 1, T, T)
+            att = att->MaskedFill(mask, std::numeric_limits<float>::lowest());
+        }
+
+
+        // (B, H_local, T, T)
+        att = nn::function::Softmax(att, -1);
+        // att: (B, H_local, T, T) @ v: (B, H_local, T, D) -> y: (B, H_local, T, D)
+        y = att->Matmul(v);
+        // (B, H_local, T, D) -> Transpose(1, 2) -> (B, T, H_local, D) -> (B, T, C_local)
+        y = y->Transpose(1, 2)->Contiguous()->View({B, T, C_local});
     }
-    // (B, H_local, T, T)
-    att = nn::function::Softmax(att, -1);
-    // att: (B, H_local, T, T) @ v: (B, H_local, T, D) -> y: (B, H_local, T, D)
-    auto y = att->Matmul(v);
-    // (B, H_local, T, D) -> Transpose(1, 2) -> (B, T, H_local, D) -> (B, T, C_local)
-    y = y->Transpose(1, 2)->Contiguous()->View({B, T, C_local});
+
     // output projection
     // (B, T, C_local) -> RowParallelLinear(C, C) -> (B, T, C)
     y = (*modules_[kCProjLayerName])({y})[0];

@@ -78,7 +78,8 @@ DEFINE_string(dtype, "float32", "precision used in training (float32/bfloat16)")
 DEFINE_string(
     precision_check, "",
     "precision check config: level=N,format=simple|table,output_md5=true|false,output_path=PATH,baseline=PATH");
-
+// attention
+DEFINE_bool(flash, false, "Enable FlashAttention (fused scaled_dot_product_attention)");
 using namespace infini_train;
 
 namespace {
@@ -178,6 +179,7 @@ void Train(const nn::parallel::Rank &rank) {
 
     // init the model, either from scratch or from OpenAI pretrained checkpoint
     GPT2Config model_config;
+    model_config.enable_flash_attention = FLAGS_flash;
     std::shared_ptr<nn::Module> model = nullptr;
     if (!FLAGS_llmc_filepath.empty()) {
         model = GPT2::FromLLMC(FLAGS_llmc_filepath);

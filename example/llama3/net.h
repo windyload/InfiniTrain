@@ -36,7 +36,7 @@ struct LLaMA3Config {
 
     // Inference
     bool use_kv = false;            // kv cache
-    bool flash = false;             // flash attention
+    bool enable_flash_attention = false;             // flash attention
     int64_t max_gen_batch_size = 4; // max batch size during inference
 };
 
@@ -82,6 +82,7 @@ private:
     int64_t n_kv_head_ = 0;
     int64_t n_rep_ = 0;
     int64_t head_dim_ = 0;
+    bool enable_flash_attention_ = false;
 };
 
 class MLP : public infini_train::nn::CloneableModule<MLP> {

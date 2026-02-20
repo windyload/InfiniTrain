@@ -79,4 +79,13 @@ std::shared_ptr<Tensor> Softmax(const std::shared_ptr<Tensor> &input, int64_t di
 std::shared_ptr<Tensor> Sigmoid(const std::shared_ptr<Tensor> &input) {
     return std::make_shared<autograd::Sigmoid>()->Apply({input})[0];
 }
+
+// std::shared_ptr<Tensor> ScaledDotProductAttention(const std::shared_ptr<Tensor> &query,
+//                                                   const std::shared_ptr<Tensor> &key,
+//                                                   const std::shared_ptr<Tensor> &value,
+//                                                   const std::shared_ptr<Tensor> &attn_mask = nullptr,
+//                                                   int64_t dropout_p = 0.0, bool is_causal = false,
+//                                                   std::optional<double> scale = std::nullopt, bool enable_gqa = False) {
+    // TODO: call autograd function
+    // return std::make_shared<autograd::ScaledDotProductAttention>(scale)->Apply({q, k, v, mask})[0]; 
 } // namespace infini_train::nn::function

@@ -12,6 +12,7 @@
 #include "infini_train/include/autograd/transform.h"
 #include "infini_train/include/nn/init.h"
 #include "infini_train/include/tensor.h"
+#include "infini_train/include/autograd/attention.h"
 
 namespace infini_train::nn::function {
 std::shared_ptr<Tensor> Tril(const std::shared_ptr<Tensor> &input, int64_t diagonal) {
@@ -80,12 +81,22 @@ std::shared_ptr<Tensor> Sigmoid(const std::shared_ptr<Tensor> &input) {
     return std::make_shared<autograd::Sigmoid>()->Apply({input})[0];
 }
 
-// std::shared_ptr<Tensor> ScaledDotProductAttention(const std::shared_ptr<Tensor> &query,
-//                                                   const std::shared_ptr<Tensor> &key,
-//                                                   const std::shared_ptr<Tensor> &value,
-//                                                   const std::shared_ptr<Tensor> &attn_mask = nullptr,
-//                                                   int64_t dropout_p = 0.0, bool is_causal = false,
-//                                                   std::optional<double> scale = std::nullopt, bool enable_gqa = False) {
-    // TODO: call autograd function
-    // return std::make_shared<autograd::ScaledDotProductAttention>(scale)->Apply({q, k, v, mask})[0]; 
+std::shared_ptr<Tensor> ScaledDotProductAttention(const std::shared_ptr<Tensor> &query,
+                                                  const std::shared_ptr<Tensor> &key,
+                                                  const std::shared_ptr<Tensor> &value,
+                                                  const std::shared_ptr<Tensor> &attn_mask,
+                                                  double dropout_p, bool is_causal,
+                                                  std::optional<double> scale, bool enable_gqa) {
+    // //TODO: call autograd function
+    // return std::make_shared<autograd::ScaledDotProductAttention>(
+    //     dropout_p, is_causal, scale, enable_gqa
+    // )->Apply({query, key, value,attn_mask})[0]
+    auto op = std::make_shared<autograd::ScaledDotProductAttention>(
+        dropout_p, is_causal, scale, enable_gqa);
+
+    if (attn_mask != nullptr) {
+        return op->Apply({query, key, value, attn_mask})[0];
+    }
+    return op->Apply({query, key, value})[0];
 } // namespace infini_train::nn::function
+}

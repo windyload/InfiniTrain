@@ -4,14 +4,16 @@
 
 #include "glog/logging.h"
 
+#include "infini_train/include/dispatcher.h"
 #include "infini_train/include/tensor.h"
-#include "inini_train/include/dispatcher.h"
 
 namespace infini_train::kernels::cuda {
 std::vector<std::shared_ptr<Tensor>>
 ScaledDotProductAttentionForward(const std::shared_ptr<Tensor> &query, const std::shared_ptr<Tensor> &key,
                                  const std::shared_ptr<Tensor> &value, const std::shared_ptr<Tensor> &attn_mask,
                                  double dropout_p, bool is_causal, double scale, bool enable_gqa) {
+    LOG(FATAL) << "Reached CUDA ScaledDotProductAttentionForward";
+
     CHECK(query != nullptr) << "query must not be nullptr";
     CHECK(key != nullptr) << "key must not be nullptr";
     CHECK(value != nullptr) << "value must not be nullptr";
@@ -37,11 +39,11 @@ ScaledDotProductAttentionForward(const std::shared_ptr<Tensor> &query, const std
     CHECK_EQ(k_dims[3], D) << "key head_dim must match query";
     CHECK_EQ(v_dims[3], D) << "value head_dim must match query";
 
-    CHECK_EQ(query->GetDevice().type(), key->GetDevice().type()) << "query and key must be on the same device";
-    CHECK_EQ(query->GetDevice().type(), value->GetDevice().type()) << "query and value must be on the same device";
+    CHECK(query->GetDevice().type() == key->GetDevice().type()) << "query and key must be on the same device";
+    CHECK(query->GetDevice().type() == value->GetDevice().type()) << "query and value must be on the same device";
 
     if (attn_mask != nullptr) {
-        CHECK_EQ(query->GetDevice().type(), attn_mask->GetDevice().type())
+        CHECK(query->GetDevice().type() == attn_mask->GetDevice().type())
             << "attn_mask must be on the same device as query";
     }
 
@@ -99,7 +101,7 @@ ScaledDotProductAttentionBackward(const std::shared_ptr<Tensor> &grad_out, const
 #define REGISTER_CUDA_ATTENTION_KERNEL(kernel_name)                                                                    \
     REGISTER_KERNEL(infini_train::Device::DeviceType::kCUDA, kernel_name, infini_train::kernels::cuda::kernel_name)
 
-REGISTER_CUDA_SOFTMAX_KERNEL(ScaledDotProductAttentionForward)
-REGISTER_CUDA_SOFTMAX_KERNEL(ScaledDotProductAttentionBackward)
+REGISTER_CUDA_ATTENTION_KERNEL(ScaledDotProductAttentionForward)
+REGISTER_CUDA_ATTENTION_KERNEL(ScaledDotProductAttentionBackward)
 
 #undef REGISTER_CUDA_ATTENTION_KERNEL

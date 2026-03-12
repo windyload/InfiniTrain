@@ -29,8 +29,8 @@ double ScaledDotProductAttention::ResolveScale(const std::shared_ptr<Tensor> &qu
     return 1.0 / std::sqrt(static_cast<double>(head_dim));
 }
 
-std::vector<std::shared_ptr<Tensor>> ScaledDotProductAttention::Forward(
-    const std::vector<std::shared_ptr<Tensor>> &input_tensors) {
+std::vector<std::shared_ptr<Tensor>>
+ScaledDotProductAttention::Forward(const std::vector<std::shared_ptr<Tensor>> &input_tensors) {
     CHECK(input_tensors.size() == 3 || input_tensors.size() == 4)
         << "ScaledDotProductAttention expects 3 or 4 input tensors: "
         << "[query, key, value] or [query, key, value, attn_mask]";
@@ -49,12 +49,10 @@ std::vector<std::shared_ptr<Tensor>> ScaledDotProductAttention::Forward(
     }
 
     // device checks
-    CHECK_EQ(query->GetDevice().type(), key->GetDevice().type())
-        << "query and key must be on the same device";
-    CHECK_EQ(query->GetDevice().type(), value->GetDevice().type())
-        << "query and value must be on the same device";
+    CHECK(query->GetDevice().type() == key->GetDevice().type()) << "query and key must be on the same device";
+    CHECK(query->GetDevice().type() == value->GetDevice().type()) << "query and value must be on the same device";
     if (attn_mask != nullptr) {
-        CHECK_EQ(query->GetDevice().type(), attn_mask->GetDevice().type())
+        CHECK(query->GetDevice().type() == attn_mask->GetDevice().type())
             << "query and attn_mask must be on the same device";
     }
 
@@ -63,10 +61,8 @@ std::vector<std::shared_ptr<Tensor>> ScaledDotProductAttention::Forward(
     CHECK_LT(dropout_p_, 1.0) << "dropout_p must be < 1";
 
     // If not implemented in backend yet, fail fast rather than silently ignore.
-    CHECK_EQ(dropout_p_, 0.0)
-        << "ScaledDotProductAttention currently does not support dropout yet";
-    CHECK(!enable_gqa_)
-        << "ScaledDotProductAttention currently does not support GQA yet";
+    CHECK_EQ(dropout_p_, 0.0) << "ScaledDotProductAttention currently does not support dropout yet";
+    CHECK(!enable_gqa_) << "ScaledDotProductAttention currently does not support GQA yet";
 
     // shape checks for expected layout:
     // query: (B, Tq, Hq, D)
@@ -104,8 +100,7 @@ std::vector<std::shared_ptr<Tensor>> ScaledDotProductAttention::Forward(
     CHECK_EQ(Dq, Dk) << "query and key head_dim must match";
     CHECK_EQ(Dq, Dv) << "query and value head_dim must match in current implementation";
 
-    CHECK_EQ(Hq, Hk)
-        << "query and key head count must match in current implementation (GQA not enabled)";
+    CHECK_EQ(Hq, Hk) << "query and key head count must match in current implementation (GQA not enabled)";
 
     CHECK_GT(Bq, 0) << "batch size must be > 0";
     CHECK_GT(Tq, 0) << "query sequence length must be > 0";
@@ -124,22 +119,12 @@ std::vector<std::shared_ptr<Tensor>> ScaledDotProductAttention::Forward(
     //   outputs[0] = out
     //   outputs[1] = softmax_lse
     auto outputs = Dispatcher::Instance().Call<std::vector<std::shared_ptr<Tensor>>>(
-        {device, "ScaledDotProductAttentionForward"},
-        query,
-        key,
-        value,
-        attn_mask,
-        dropout_p_,
-        is_causal_,
-        actual_scale,
-        enable_gqa_);
+        {device, "ScaledDotProductAttentionForward"}, query, key, value, attn_mask, dropout_p_, is_causal_,
+        actual_scale, enable_gqa_);
 
-    CHECK_GE(outputs.size(), 2)
-        << "ScaledDotProductAttentionForward should return {out, softmax_lse}";
-    CHECK(outputs[0] != nullptr)
-        << "ScaledDotProductAttentionForward output[0] (out) must not be nullptr";
-    CHECK(outputs[1] != nullptr)
-        << "ScaledDotProductAttentionForward output[1] (softmax_lse) must not be nullptr";
+    CHECK_GE(outputs.size(), 2) << "ScaledDotProductAttentionForward should return {out, softmax_lse}";
+    CHECK(outputs[0] != nullptr) << "ScaledDotProductAttentionForward output[0] (out) must not be nullptr";
+    CHECK(outputs[1] != nullptr) << "ScaledDotProductAttentionForward output[1] (softmax_lse) must not be nullptr";
 
     forward_softmax_lse_ = outputs[1];
 
@@ -147,13 +132,11 @@ std::vector<std::shared_ptr<Tensor>> ScaledDotProductAttention::Forward(
     return {outputs[0]};
 }
 
-void ScaledDotProductAttention::SetupContext(
-    const std::vector<std::shared_ptr<Tensor>> &input_tensors,
-    const std::vector<std::shared_ptr<Tensor>> &output_tensors) {
+void ScaledDotProductAttention::SetupContext(const std::vector<std::shared_ptr<Tensor>> &input_tensors,
+                                             const std::vector<std::shared_ptr<Tensor>> &output_tensors) {
     CHECK(input_tensors.size() == 3 || input_tensors.size() == 4)
         << "ScaledDotProductAttention expects 3 or 4 input tensors";
-    CHECK_EQ(output_tensors.size(), 1)
-        << "ScaledDotProductAttention forward should expose exactly 1 output tensor";
+    CHECK_EQ(output_tensors.size(), 1) << "ScaledDotProductAttention forward should expose exactly 1 output tensor";
 
     const auto &query = input_tensors[0];
     const auto &key = input_tensors[1];
@@ -172,8 +155,7 @@ void ScaledDotProductAttention::SetupContext(
     CHECK(out != nullptr) << "attention output must not be nullptr";
 
     const auto &softmax_lse = forward_softmax_lse_;
-    CHECK(softmax_lse != nullptr)
-        << "forward_softmax_lse_ must not be nullptr after forward";
+    CHECK(softmax_lse != nullptr) << "forward_softmax_lse_ must not be nullptr after forward";
 
     has_attn_mask_ = (attn_mask != nullptr);
     has_softmax_lse_ = true;
@@ -189,16 +171,14 @@ void ScaledDotProductAttention::SetupContext(
     saved_tensors_ = {query, key, value, attn_mask, out, softmax_lse};
 }
 
-std::vector<std::shared_ptr<Tensor>> ScaledDotProductAttention::Backward(
-    const std::vector<std::shared_ptr<Tensor>> &grad_outputs) {
-    CHECK_EQ(grad_outputs.size(), 1)
-        << "ScaledDotProductAttention backward expects 1 grad output";
+std::vector<std::shared_ptr<Tensor>>
+ScaledDotProductAttention::Backward(const std::vector<std::shared_ptr<Tensor>> &grad_outputs) {
+    CHECK_EQ(grad_outputs.size(), 1) << "ScaledDotProductAttention backward expects 1 grad output";
 
     const auto &grad_out = grad_outputs[0];
     CHECK(grad_out != nullptr) << "grad_output must not be nullptr";
 
-    CHECK_EQ(saved_tensors_.size(), 6)
-        << "ScaledDotProductAttention saved_tensors_ size must be 6";
+    CHECK_EQ(saved_tensors_.size(), 6) << "ScaledDotProductAttention saved_tensors_ size must be 6";
 
     const auto &query = saved_tensors_[0];
     const auto &key = saved_tensors_[1];
@@ -212,10 +192,8 @@ std::vector<std::shared_ptr<Tensor>> ScaledDotProductAttention::Backward(
     CHECK(value != nullptr) << "saved value must not be nullptr";
     CHECK(out != nullptr) << "saved out must not be nullptr";
 
-    CHECK(has_softmax_lse_)
-        << "FlashAttention backward expects softmax_lse saved from forward";
-    CHECK(softmax_lse != nullptr)
-        << "saved softmax_lse must not be nullptr";
+    CHECK(has_softmax_lse_) << "FlashAttention backward expects softmax_lse saved from forward";
+    CHECK(softmax_lse != nullptr) << "saved softmax_lse must not be nullptr";
 
     const auto device = query->GetDevice().type();
 
@@ -226,24 +204,12 @@ std::vector<std::shared_ptr<Tensor>> ScaledDotProductAttention::Backward(
     //
     // returns:
     //   grad_query, grad_key, grad_value, grad_attn_mask
-    auto [grad_query, grad_key, grad_value, grad_attn_mask] =
-        Dispatcher::Instance().Call<
-            std::tuple<std::shared_ptr<Tensor>,
-                       std::shared_ptr<Tensor>,
-                       std::shared_ptr<Tensor>,
-                       std::shared_ptr<Tensor>>>(
-            {device, "ScaledDotProductAttentionBackward"},
-            grad_out,
-            query,
-            key,
-            value,
-            attn_mask,
-            out,
-            softmax_lse,
-            dropout_p_,
-            is_causal_,
-            actual_scale_,
-            enable_gqa_);
+    auto [grad_query, grad_key, grad_value, grad_attn_mask]
+        = Dispatcher::Instance()
+              .Call<std::tuple<std::shared_ptr<Tensor>, std::shared_ptr<Tensor>, std::shared_ptr<Tensor>,
+                               std::shared_ptr<Tensor>>>({device, "ScaledDotProductAttentionBackward"}, grad_out, query,
+                                                         key, value, attn_mask, out, softmax_lse, dropout_p_,
+                                                         is_causal_, actual_scale_, enable_gqa_);
 
     CHECK(grad_query != nullptr) << "grad_query must not be nullptr";
     CHECK(grad_key != nullptr) << "grad_key must not be nullptr";

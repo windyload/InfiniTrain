@@ -35,9 +35,9 @@ struct LLaMA3Config {
     float norm_eps = 1e-5f; // epsilon in RMSNorm
 
     // Inference
-    bool use_kv = false;            // kv cache
-    bool enable_flash_attention = false;             // flash attention
-    int64_t max_gen_batch_size = 4; // max batch size during inference
+    bool use_kv = false;                 // kv cache
+    bool enable_flash_attention = false; // flash attention
+    int64_t max_gen_batch_size = 4;      // max batch size during inference
 };
 
 class SwiGLU : public infini_train::nn::CloneableModule<SwiGLU> {
@@ -180,7 +180,7 @@ public:
     Forward(const std::vector<std::shared_ptr<infini_train::Tensor>> &x) override;
 
     static std::shared_ptr<LLaMA3> FromPretrained(ModelType model_type);
-    static std::shared_ptr<LLaMA3> FromLLMC(const std::string &filepath);
+    static std::shared_ptr<LLaMA3> FromLLMC(const std::string &filepath, bool enable_flash_attention = false);
 
     int GetChunkSize() const { return stage_info_.layer_ranges_per_chunk.size(); }
 

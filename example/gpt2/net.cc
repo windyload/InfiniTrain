@@ -139,7 +139,7 @@ CausalSelfAttention::Forward(const std::vector<std::shared_ptr<infini_train::Ten
         auto k_bhtd = k->Transpose(1, 2);
         auto q_bhtd = q->Transpose(1, 2);
         auto v_bhtd = v->Transpose(1, 2);
-        
+
         // (B, h_l, T, Dh) * (B, h_l, Dh, T) -> (B, h_l, T, T)
         auto att = q_bhtd->Matmul(k_bhtd->Transpose(-2, -1)) * (1.0 / std::sqrt(head_dim));
         // (1, 1, T, T)
@@ -387,7 +387,7 @@ std::tuple<int32_t, infini_train::DataType> DetermineAndCheckVersion(const std::
 }
 } // namespace
 
-std::shared_ptr<GPT2> GPT2::FromLLMC(const std::string &filepath) {
+std::shared_ptr<GPT2> GPT2::FromLLMC(const std::string &filepath, bool enable_flash_attention) {
     if (!std::filesystem::exists(filepath)) {
         LOG(FATAL) << "File not found: " << filepath;
     }
@@ -415,7 +415,8 @@ std::shared_ptr<GPT2> GPT2::FromLLMC(const std::string &filepath) {
                                                         .original_vocab_size = vocab_size,
                                                         .n_layer = n_layer,
                                                         .n_head = n_head,
-                                                        .n_embd = n_embd});
+                                                        .n_embd = n_embd,
+                                                        .enable_flash_attention = enable_flash_attention});
 
     LOG(INFO) << "magic: " << magic << " version: " << version << " block_size: " << block_size
               << " vocab_size: " << vocab_size << " n_layer: " << n_layer << " n_head: " << n_head

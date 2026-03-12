@@ -182,7 +182,7 @@ void Train(const nn::parallel::Rank &rank) {
     model_config.enable_flash_attention = FLAGS_flash;
     std::shared_ptr<nn::Module> model = nullptr;
     if (!FLAGS_llmc_filepath.empty()) {
-        model = GPT2::FromLLMC(FLAGS_llmc_filepath);
+        model = GPT2::FromLLMC(FLAGS_llmc_filepath, FLAGS_flash);
     } else if (kModelToConfigs.count(FLAGS_model)) {
         model_config = kModelToConfigs.at(FLAGS_model);
         model = std::make_shared<GPT2>(model_config);
@@ -272,7 +272,7 @@ void Train(const nn::parallel::Rank &rank) {
     auto train_iter = train_loader.begin();
     std::shared_ptr<nn::Module> loss_fn
         = (tp_world_size > 1) ? std::static_pointer_cast<nn::Module>(
-              std::make_shared<VocabParallelCrossEntropyLoss>(model_config.original_vocab_size))
+                                    std::make_shared<VocabParallelCrossEntropyLoss>(model_config.original_vocab_size))
                               : std::static_pointer_cast<nn::Module>(std::make_shared<nn::CrossEntropyLoss>());
     loss_fn->To(device);
     LOG(INFO) << "Rank " << rank.GlobalRank() << ": start training";

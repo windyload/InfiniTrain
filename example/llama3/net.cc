@@ -234,7 +234,7 @@ std::vector<std::shared_ptr<Tensor>> CausalSelfAttention::Forward(const std::vec
                                                     /*is_causal=*/true,
                                                     /*scale=*/scale,
                                                     /*enable_gqa=*/false);
-        
+
         // (B, T, H_local, D) -> (B, T, C_local)
         y = y->View({B, T, C_local});
     } else {
@@ -246,7 +246,7 @@ std::vector<std::shared_ptr<Tensor>> CausalSelfAttention::Forward(const std::vec
         // p = softmax(scores)
         // y = p @ v
         // -----------------------------
-        
+
         // (B, T, H_local, D) -> (B, H_local, T, D)
         q = q->Transpose(1, 2);
         k = k->Transpose(1, 2);
@@ -263,7 +263,6 @@ std::vector<std::shared_ptr<Tensor>> CausalSelfAttention::Forward(const std::vec
             // mask: (1, 1, T, T)
             att = att->MaskedFill(mask, std::numeric_limits<float>::lowest());
         }
-
 
         // (B, H_local, T, T)
         att = nn::function::Softmax(att, -1);
@@ -493,7 +492,7 @@ constexpr int32_t kLLaMA3Magic = 20240803;
 constexpr int32_t kLLaMA3FP32Version = 3;
 } // namespace
 
-std::shared_ptr<LLaMA3> LLaMA3::FromLLMC(const std::string &filepath) {
+std::shared_ptr<LLaMA3> LLaMA3::FromLLMC(const std::string &filepath, bool enable_flash_attention) {
     if (!std::filesystem::exists(filepath)) {
         LOG(FATAL) << "File not found: " << filepath;
     }
@@ -532,6 +531,7 @@ std::shared_ptr<LLaMA3> LLaMA3::FromLLMC(const std::string &filepath) {
                                                         .rope_theta = rope_theta,
                                                         .use_scaled_rope = static_cast<bool>(use_scaled_rope),
                                                         .norm_eps = norm_eps,
+                                                        .enable_flash_attention = enable_flash_attention,
                                                         .max_gen_batch_size = max_gen_bs});
 
     // ========== pp_size：num_stages; vpp_size: num_chunks_per_stage ==========

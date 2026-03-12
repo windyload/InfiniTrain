@@ -228,15 +228,15 @@ std::vector<std::shared_ptr<Tensor>> CausalSelfAttention::Forward(const std::vec
         const double scale = 1.0 / std::sqrt(static_cast<double>(D));
 
         // (B, T, H_local, D)
-        // y = nn::function::ScaledDotProductAttention(q, k, v,
-        //                                             /*attn_mask=*/nullptr,
-        //                                             /*dropout_p=*/0.0,
-        //                                             /*is_causal=*/true,
-        //                                             /*scale=*/scale,
-        //                                             /*enable_gqa=*/false);
+        y = nn::function::ScaledDotProductAttention(q, k, v,
+                                                    /*attn_mask=*/nullptr,
+                                                    /*dropout_p=*/0.0,
+                                                    /*is_causal=*/true,
+                                                    /*scale=*/scale,
+                                                    /*enable_gqa=*/false);
         
-        // // (B, T, H_local, D) -> (B, T, C_local)
-        // y = y->View({B, T, C_local});
+        // (B, T, H_local, D) -> (B, T, C_local)
+        y = y->View({B, T, C_local});
     } else {
         LOG(INFO) << "naive attention path";
         // -----------------------------

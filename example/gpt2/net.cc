@@ -119,13 +119,13 @@ CausalSelfAttention::Forward(const std::vector<std::shared_ptr<infini_train::Ten
 
         const double scale = 1.0 / std::sqrt(static_cast<double>(head_dim));
         // TODO: flash attention not wired yet
-        // y = nn::function::ScaledDotProductAttention(q, k, v,
-        //                                             /*attn_mask=*/nullptr,
-        //                                             /*dropout_p=*/0.0,
-        //                                             /*is_causal=*/true,
-        //                                             /*scale=*/scale,
-        //                                             /*enable_gqa=*/false); // (B, T, h_l, Dh)
-        // y = y->View({B, T, local_C});
+        y = nn::function::ScaledDotProductAttention(q, k, v,
+                                                    /*attn_mask=*/nullptr,
+                                                    /*dropout_p=*/0.0,
+                                                    /*is_causal=*/true,
+                                                    /*scale=*/scale,
+                                                    /*enable_gqa=*/false); // (B, T, h_l, Dh)
+        y = y->View({B, T, local_C});
     } else {
         // -----------------------------
         // 原始拼接版本（示意）

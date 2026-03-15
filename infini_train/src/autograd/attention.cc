@@ -65,30 +65,30 @@ ScaledDotProductAttention::Forward(const std::vector<std::shared_ptr<Tensor>> &i
     CHECK(!enable_gqa_) << "ScaledDotProductAttention currently does not support GQA yet";
 
     // shape checks for expected layout:
-    // query: (B, Tq, Hq, D)
-    // key:   (B, Tk, Hk, D)
-    // value: (B, Tk, Hk, D)
+    // query: (B, Hq, Tq, D)
+    // key:   (B, Hk, Tk, D)
+    // value: (B, Hk, Tk, D)
     const auto &q_dims = query->Dims();
     const auto &k_dims = key->Dims();
     const auto &v_dims = value->Dims();
 
-    CHECK_EQ(q_dims.size(), 4) << "query must be a 4D tensor of shape (B, Tq, Hq, D)";
-    CHECK_EQ(k_dims.size(), 4) << "key must be a 4D tensor of shape (B, Tk, Hk, D)";
-    CHECK_EQ(v_dims.size(), 4) << "value must be a 4D tensor of shape (B, Tk, Hk, D)";
+    CHECK_EQ(q_dims.size(), 4) << "query must be a 4D tensor of shape (B, Hq, Tq, D)";
+    CHECK_EQ(k_dims.size(), 4) << "key must be a 4D tensor of shape (B, Hk, Tk, D)";
+    CHECK_EQ(v_dims.size(), 4) << "value must be a 4D tensor of shape (B, Hk, Tk, D)";
 
     const auto Bq = q_dims[0];
-    const auto Tq = q_dims[1];
-    const auto Hq = q_dims[2];
+    const auto Hq = q_dims[1];
+    const auto Tq = q_dims[2];
     const auto Dq = q_dims[3];
 
     const auto Bk = k_dims[0];
-    const auto Tk = k_dims[1];
-    const auto Hk = k_dims[2];
+    const auto Hk = k_dims[1];
+    const auto Tk = k_dims[2];
     const auto Dk = k_dims[3];
 
     const auto Bv = v_dims[0];
-    const auto Tv = v_dims[1];
-    const auto Hv = v_dims[2];
+    const auto Hv = v_dims[1];
+    const auto Tv = v_dims[2];
     const auto Dv = v_dims[3];
 
     CHECK_EQ(Bq, Bk) << "query and key batch size must match";

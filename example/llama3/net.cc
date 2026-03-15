@@ -213,12 +213,16 @@ std::vector<std::shared_ptr<Tensor>> CausalSelfAttention::Forward(const std::vec
     k = RepeatKV(k, n_rep_);
     v = RepeatKV(v, n_rep_);
 
+    // (B, T, H_local, D) -> (B, H_local, T, D)
+    q = q->Transpose(1, 2);
+    k = k->Transpose(1, 2);
+    v = v->Transpose(1, 2);
+
     // TODO(zbl): support flash attention later
     std::shared_ptr<Tensor> y;
     if (enable_flash_attention_) {
         LOG(INFO) << "flash attention path";
-        // ===== FlashAttention 路径：要求 (B, T, h_l, Dh) =====
-        // 当前已经是 (B, T, H_local, D) 的形状了
+        // ===== FlashAttention 路径：要求 (B, h_l, T, Dh) =====
         // 注意：FlashAttention 的实现可能会对输入的内存布局有要求，如果遇到性能问题，可以尝试调用 Contiguous()
         // 来确保内存连续
         k = k->Contiguous();
@@ -246,11 +250,6 @@ std::vector<std::shared_ptr<Tensor>> CausalSelfAttention::Forward(const std::vec
         // p = softmax(scores)
         // y = p @ v
         // -----------------------------
-
-        // (B, T, H_local, D) -> (B, H_local, T, D)
-        q = q->Transpose(1, 2);
-        k = k->Transpose(1, 2);
-        v = v->Transpose(1, 2);
 
         // manual implementation of attention
         // this materializes the large (T,T) matrix for all the queries and keys

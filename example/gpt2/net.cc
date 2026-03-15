@@ -101,16 +101,16 @@ CausalSelfAttention::Forward(const std::vector<std::shared_ptr<infini_train::Ten
     const auto T = q->Dims()[1];
 
     // View to multi-head: local_n_head * head_dim == local_C
-    // (B, T, local_C) -> (B, T, h_l, Dh)
-    k = k->View({B, T, local_n_head_, head_dim});
-    q = q->View({B, T, local_n_head_, head_dim});
-    v = v->View({B, T, local_n_head_, head_dim});
+    // (B, T, local_C) -> (B, T, h_l, Dh) -> (B, h_l, T, Dh)
+    k = k->View({B, T, local_n_head_, head_dim})->Transpose(1, 2);
+    q = q->View({B, T, local_n_head_, head_dim})->Transpose(1, 2);
+    v = v->View({B, T, local_n_head_, head_dim})->Transpose(1, 2);
 
     std::shared_ptr<infini_train::Tensor> y;
 
     if (enable_flash_attention_) {
         // Use FlashAttention if enabled and supported
-        // ===== FlashAttention 路径：要求 (B, T, h_l, Dh) =====
+        // ===== FlashAttention 路径：要求 (B, h_l, T, Dh) =====
         // 注意：FlashAttention 的实现可能会对输入的内存布局有要求，如果遇到性能问题，可以尝试调用 Contiguous()
         // 来确保内存连续
         k = k->Contiguous();
@@ -124,8 +124,8 @@ CausalSelfAttention::Forward(const std::vector<std::shared_ptr<infini_train::Ten
                                                     /*dropout_p=*/0.0,
                                                     /*is_causal=*/true,
                                                     /*scale=*/scale,
-                                                    /*enable_gqa=*/false); // (B, T, h_l, Dh)
-        y = y->View({B, T, local_C});
+                                                    /*enable_gqa=*/false);
+        y = y->Transpose(1, 2)->Contiguous()->View({B, T, local_C});
     } else {
         // -----------------------------
         // 原始拼接版本（示意）
@@ -135,13 +135,8 @@ CausalSelfAttention::Forward(const std::vector<std::shared_ptr<infini_train::Ten
         // y = p @ v
         // -----------------------------
 
-        // (B, T, h_l, Dh) -> (B, h_l, T, Dh)
-        auto k_bhtd = k->Transpose(1, 2);
-        auto q_bhtd = q->Transpose(1, 2);
-        auto v_bhtd = v->Transpose(1, 2);
-
         // (B, h_l, T, Dh) * (B, h_l, Dh, T) -> (B, h_l, T, T)
-        auto att = q_bhtd->Matmul(k_bhtd->Transpose(-2, -1)) * (1.0 / std::sqrt(head_dim));
+        auto att = q->Matmul(k->Transpose(-2, -1)) * (1.0 / std::sqrt(head_dim));
         // (1, 1, T, T)
         auto mask = buffers_[kParamBiasName]->Slice({0, 0, 0, 0}, {1, 1, T, T}, {1, 1, 1, 1});
         // (1, 1, T, T) -> eq 0 -> (1, 1, T, T) -> masked_fill -> (B, h_l, T, T)
@@ -149,7 +144,7 @@ CausalSelfAttention::Forward(const std::vector<std::shared_ptr<infini_train::Ten
         // (B, h_l, T, T)
         att = nn::function::Softmax(att, -1);
         // (B, h_l, T, Dh)
-        y = att->Matmul(v_bhtd);
+        y = att->Matmul(v);
         // (B, h_l, T, Dh) -> (B, T, h_l, Dh) -> (B, T, local_C)
         y = y->Transpose(1, 2)->Contiguous()->View({B, T, local_C});
     }

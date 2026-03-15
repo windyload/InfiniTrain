@@ -2,8 +2,8 @@
 
 #include <cstdint>
 #include <memory>
-#include <vector>
 #include <optional>
+#include <vector>
 
 namespace infini_train {
 class Tensor;
@@ -187,21 +187,17 @@ std::shared_ptr<Tensor> Concat(const std::vector<std::shared_ptr<Tensor>> &input
 // Computes scaled dot-product attention.
 //
 // Expected input layout:
-//   query: (B, Tq, Hq, D)
-//   key:   (B, Tk, Hk, D)
-//   value: (B, Tk, Hk, D)
+//   query: (B, Hq, Tq, D)
+//   key:   (B, Hk, Tk, D)
+//   value: (B, Hk, Tk, D)
 //
 // Returns:
-//   output: (B, Tq, Hq, D)
-std::shared_ptr<Tensor> ScaledDotProductAttention(
-    const std::shared_ptr<Tensor> &query,
-    const std::shared_ptr<Tensor> &key,
-    const std::shared_ptr<Tensor> &value,
-    const std::shared_ptr<Tensor> &attn_mask = nullptr,
-    double dropout_p = 0.0,
-    bool is_causal = false,
-    std::optional<double> scale = std::nullopt,
-    bool enable_gqa = false);
-
+//   output: (B, Hq, Tq, D)
+std::shared_ptr<Tensor> ScaledDotProductAttention(const std::shared_ptr<Tensor> &query,
+                                                  const std::shared_ptr<Tensor> &key,
+                                                  const std::shared_ptr<Tensor> &value,
+                                                  const std::shared_ptr<Tensor> &attn_mask = nullptr,
+                                                  double dropout_p = 0.0, bool is_causal = false,
+                                                  std::optional<double> scale = std::nullopt, bool enable_gqa = false);
 
 } // namespace infini_train::nn::function
